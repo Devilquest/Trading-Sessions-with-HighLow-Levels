@@ -1,0 +1,353 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Devilquest
+//@version=6
+indicator(title = "Trading Sessions with High/Low Levels", shorttitle = "Trading Sessions H/L", overlay = true, max_lines_count = 500)
+
+// --- User Inputs ---
+// First Session (Asia)
+const string FIRST_SESSION_GROUP = "First Session"
+showFirstBackground = input.bool(true, "Show session background", group = FIRST_SESSION_GROUP, display = display.none)
+firstSessionName  = input.string("Asia", "Name", group = FIRST_SESSION_GROUP, display = display.none)
+firstSessionTime  = input.session("0200-0900", "Session time", group = FIRST_SESSION_GROUP, display = display.none)
+firstSessionColor = input.color(color.new(#ff0000, 90), "Session background color", group = FIRST_SESSION_GROUP, display = display.none)
+showFirstLines = input.bool(true, "Show High/Low lines", group = FIRST_SESSION_GROUP, display = display.none)
+firstLineColor = input.color(color.red, "Line/Label color", group = FIRST_SESSION_GROUP, display = display.none)
+firstLineWidth = input.int(1, "Line width", minval = 1, maxval = 5, group = FIRST_SESSION_GROUP, display = display.none)
+firstLineStyle = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], group = FIRST_SESSION_GROUP, display = display.none)
+showFirstLabels = input.bool(true, "Show High/Low labels", group = FIRST_SESSION_GROUP, tooltip = "Only works if 'Show High/Low lines' is enabled.", display = display.none)
+firstTextColor = input.color(color.white, "Label text color", group = FIRST_SESSION_GROUP, display = display.none)
+firstLabelSize = input.string("Small", "Label size", options = ["Tiny", "Small", "Normal", "Large"], group = FIRST_SESSION_GROUP, display = display.none)
+
+// Second Session (London)
+const string SECOND_SESSION_GROUP = "Second Session"
+showSecondBackground = input.bool(true, "Show session background", group = SECOND_SESSION_GROUP, display = display.none)
+secondSessionName  = input.string("London", "Name", group = SECOND_SESSION_GROUP, display = display.none)
+secondSessionTime  = input.session("0900-1500", "Session time", group = SECOND_SESSION_GROUP, display = display.none)
+secondSessionColor = input.color(color.new(#00ff00, 90), "Session background color", group = SECOND_SESSION_GROUP, display = display.none)
+showSecondLines = input.bool(true, "Show High/Low lines", group = SECOND_SESSION_GROUP, display = display.none)
+secondLineColor = input.color(color.green, "Line/Label color", group = SECOND_SESSION_GROUP, display = display.none)
+secondLineWidth = input.int(1, "Line width", minval = 1, maxval = 5, group = SECOND_SESSION_GROUP, display = display.none)
+secondLineStyle = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], group = SECOND_SESSION_GROUP, display = display.none)
+showSecondLabels = input.bool(true, "Show High/Low labels", group = SECOND_SESSION_GROUP, tooltip = "Only works if 'Show High/Low lines' is enabled.", display = display.none)
+secondTextColor = input.color(color.white, "Label text color", group = SECOND_SESSION_GROUP, display = display.none)
+secondLabelSize = input.string("Small", "Label size", options = ["Tiny", "Small", "Normal", "Large"], group = SECOND_SESSION_GROUP, display = display.none)
+
+// Third Session (USA)
+const string THIRD_SESSION_GROUP = "Third Session"
+showThirdBackground = input.bool(true, "Show session background", group = THIRD_SESSION_GROUP, display = display.none)
+thirdSessionName  = input.string("USA", "Name", group = THIRD_SESSION_GROUP, display = display.none)
+thirdSessionTime  = input.session("1500-2300", "Session time", group = THIRD_SESSION_GROUP, display = display.none)
+thirdSessionColor = input.color(color.new(#0000ff, 90), "Session background color", group = THIRD_SESSION_GROUP, display = display.none)
+showThirdLines = input.bool(true, "Show High/Low lines", group = THIRD_SESSION_GROUP, display = display.none)
+thirdLineColor = input.color(color.blue, "Line/Label color", group = THIRD_SESSION_GROUP, display = display.none)
+thirdLineWidth = input.int(1, "Line width", minval = 1, maxval = 5, group = THIRD_SESSION_GROUP, display = display.none)
+thirdLineStyle = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], group = THIRD_SESSION_GROUP, display = display.none)
+showThirdLabels = input.bool(true, "Show High/Low labels", group = THIRD_SESSION_GROUP, tooltip = "Only works if 'Show High/Low lines' is enabled.", display = display.none)
+thirdTextColor = input.color(color.white, "Label text color", group = THIRD_SESSION_GROUP, display = display.none)
+thirdLabelSize = input.string("Small", "Label size", options = ["Tiny", "Small", "Normal", "Large"], group = THIRD_SESSION_GROUP, display = display.none)
+
+// High/Low Lines Options
+const string LINES_OPTIONS_GROUP = "High/Low Lines Options"
+sessionsToShow = input.int(3, "Number of sessions to show lines", minval = 1, maxval = 21, group = LINES_OPTIONS_GROUP, tooltip = "Number of sessions (current + previous) to display high/low lines for (ignored when 'Only show current day sessions' is enabled).", display = display.none)
+onlyCurrentDay = input.bool(false, "Only show current day sessions", group = LINES_OPTIONS_GROUP, tooltip = "If enabled, only shows sessions from today, ignoring the 'Number of sessions to show lines' option.", display = display.none)
+extendToCurrentBar = input.bool(false, "Extend lines to current bar", group = LINES_OPTIONS_GROUP, tooltip = "If enabled, all lines extend to current bar. If disabled, lines end at their respective session end.", display = display.none)
+
+// Global Options
+const string GLOBAL_OPTIONS_GROUP = "Global Options"
+int utcOffsetInput = input.int(defval = 1, title ="UTC Time Zone Adjustment (+/-)", minval = -12, maxval = 14, group = GLOBAL_OPTIONS_GROUP, tooltip = "Adjust the UTC offset to match your local time zone. \n\nExample: If you live in Germany (UTC+1), set the value to 1.", display = display.none)
+
+//@variable A valid time zone string based on the `utcOffsetInput`, in UTC offset notation (e.g., "UTC-4").
+string customOffset = "UTC" + (utcOffsetInput > 0 ? "+" : "") + str.tostring(utcOffsetInput)
+
+// Function to check if a timestamp belongs to today
+isToday(timestamp) =>
+    today = time(timeframe.period, "0000-2400", customOffset)
+    daystart = math.floor(today / 86400000) * 86400000  // Get start of today in milliseconds
+    dayend = daystart + 86400000  // End of today
+    timestamp >= daystart and timestamp < dayend
+
+// Convert label size input to Pine Script label size
+getLabelSize(labelSizeString) =>
+    switch labelSizeString
+        "Tiny" => size.tiny
+        "Small" => size.small
+        "Normal" => size.normal
+        "Large" => size.large
+        => size.small
+
+// Convert line style input to Pine Script line style
+getLineStyle(lineStyleString) =>
+    switch lineStyleString
+        "Solid" => line.style_solid
+        "Dashed" => line.style_dashed
+        "Dotted" => line.style_dotted
+        => line.style_solid
+
+// Function to calculate center bar of a session
+getCenterBar(startBar, endBar) =>
+    math.round((startBar + endBar) / 2)
+
+// Determine if sessions are active
+firstSessionActive = not na(time(timeframe.period, firstSessionTime, customOffset))
+secondSessionActive = not na(time(timeframe.period, secondSessionTime, customOffset))
+thirdSessionActive = not na(time(timeframe.period, thirdSessionTime, customOffset))
+
+// Color the background of active sessions (independent of lines)
+bgcolor(showFirstBackground and firstSessionActive ? firstSessionColor : na, editable = false)
+bgcolor(showSecondBackground and secondSessionActive ? secondSessionColor : na, editable = false)
+bgcolor(showThirdBackground and thirdSessionActive ? thirdSessionColor : na, editable = false)
+
+// Type for session data
+type SessionData
+    float high
+    float low
+    int start
+    int end
+    color lineColor
+    color textColor
+    bool active
+    string name
+    int sessionType  // 1=Asia, 2=London, 3=USA
+    int timestamp
+    bool showLabels
+    int lineWidth
+    string lineStyle
+    string labelSize
+
+// Global array to store ALL sessions chronologically
+var array<SessionData> allSessions = array.new<SessionData>()
+
+// Arrays to store current lines and labels
+var array<line> allHighLines = array.new<line>()
+var array<line> allLowLines = array.new<line>()
+var array<label> allHighLabels = array.new<label>()
+var array<label> allLowLabels = array.new<label>()
+
+// Function to clean old lines and labels
+cleanOldLines() =>
+    while array.size(allHighLines) > 0
+        line.delete(array.shift(allHighLines))
+    while array.size(allLowLines) > 0
+        line.delete(array.shift(allLowLines))
+    while array.size(allHighLabels) > 0
+        label.delete(array.shift(allHighLabels))
+    while array.size(allLowLabels) > 0
+        label.delete(array.shift(allLowLabels))
+
+// Variables to track current sessions
+var float currentFirstHigh = na
+var float currentFirstLow = na
+var int currentFirstStart = na
+
+var float currentSecondHigh = na
+var float currentSecondLow = na
+var int currentSecondStart = na
+
+var float currentThirdHigh = na
+var float currentThirdLow = na
+var int currentThirdStart = na
+
+// Process First Session (Asia)
+if showFirstLines
+    // Session just started
+    if firstSessionActive and not firstSessionActive[1]
+        currentFirstHigh := high
+        currentFirstLow := low
+        currentFirstStart := bar_index
+    
+    // Session continues
+    else if firstSessionActive
+        currentFirstHigh := math.max(currentFirstHigh, high)
+        currentFirstLow := math.min(currentFirstLow, low)
+    
+    // Session just ended
+    else if not firstSessionActive and firstSessionActive[1]
+        if not na(currentFirstHigh) and not na(currentFirstLow) and not na(currentFirstStart)
+            // Add completed session to global array
+            sessionData = SessionData.new(currentFirstHigh, currentFirstLow, currentFirstStart, bar_index - 1, firstLineColor, firstTextColor, false, firstSessionName, 1, time, showFirstLabels, firstLineWidth, firstLineStyle, firstLabelSize)
+            array.unshift(allSessions, sessionData)
+        
+        currentFirstHigh := na
+        currentFirstLow := na
+        currentFirstStart := na
+
+// Process Second Session (London)
+if showSecondLines
+    // Session just started
+    if secondSessionActive and not secondSessionActive[1]
+        currentSecondHigh := high
+        currentSecondLow := low
+        currentSecondStart := bar_index
+    
+    // Session continues
+    else if secondSessionActive
+        currentSecondHigh := math.max(currentSecondHigh, high)
+        currentSecondLow := math.min(currentSecondLow, low)
+    
+    // Session just ended
+    else if not secondSessionActive and secondSessionActive[1]
+        if not na(currentSecondHigh) and not na(currentSecondLow) and not na(currentSecondStart)
+            // Add completed session to global array
+            sessionData = SessionData.new(currentSecondHigh, currentSecondLow, currentSecondStart, bar_index - 1, secondLineColor, secondTextColor, false, secondSessionName, 2, time, showSecondLabels, secondLineWidth, secondLineStyle, secondLabelSize)
+            array.unshift(allSessions, sessionData)
+        
+        currentSecondHigh := na
+        currentSecondLow := na
+        currentSecondStart := na
+
+// Process Third Session (USA)
+if showThirdLines
+    // Session just started
+    if thirdSessionActive and not thirdSessionActive[1]
+        currentThirdHigh := high
+        currentThirdLow := low
+        currentThirdStart := bar_index
+    
+    // Session continues
+    else if thirdSessionActive
+        currentThirdHigh := math.max(currentThirdHigh, high)
+        currentThirdLow := math.min(currentThirdLow, low)
+    
+    // Session just ended
+    else if not thirdSessionActive and thirdSessionActive[1]
+        if not na(currentThirdHigh) and not na(currentThirdLow) and not na(currentThirdStart)
+            // Add completed session to global array
+            sessionData = SessionData.new(currentThirdHigh, currentThirdLow, currentThirdStart, bar_index - 1, thirdLineColor, thirdTextColor, false, thirdSessionName, 3, time, showThirdLabels, thirdLineWidth, thirdLineStyle, thirdLabelSize)
+            array.unshift(allSessions, sessionData)
+        
+        currentThirdHigh := na
+        currentThirdLow := na
+        currentThirdStart := na
+
+// Clean old lines
+cleanOldLines()
+
+// Keep only the required number of sessions in history
+while array.size(allSessions) > sessionsToShow * 3  // Keep more for safety since we have 3 session types
+    array.pop(allSessions)
+
+// Initialize session counter
+sessionsDrawn = 0
+
+// Determine effective session limit
+effectiveSessionsToShow = onlyCurrentDay ? 999 : sessionsToShow  // Use high number when filtering by current day
+
+// PRIORITY 1: Draw current active sessions FIRST (these are the most important)
+// Check and draw current First session
+if showFirstLines and firstSessionActive and not na(currentFirstHigh) and not na(currentFirstLow) and not na(currentFirstStart) and sessionsDrawn < effectiveSessionsToShow
+    // Only draw if it's today (or if onlyCurrentDay is disabled)
+    if not onlyCurrentDay or isToday(time)
+        endBar = extendToCurrentBar ? bar_index : bar_index
+        centerBar = getCenterBar(currentFirstStart, bar_index)
+        
+        // High line - use the exact color chosen by user
+        highLine = line.new(currentFirstStart, currentFirstHigh, endBar, currentFirstHigh, color = firstLineColor, width = firstLineWidth, style = getLineStyle(firstLineStyle), extend = extend.none)
+        array.push(allHighLines, highLine)
+        
+        // Low line - use the exact color chosen by user
+        lowLine = line.new(currentFirstStart, currentFirstLow, endBar, currentFirstLow, color = firstLineColor, width = firstLineWidth, style = getLineStyle(firstLineStyle), extend = extend.none)
+        array.push(allLowLines, lowLine)
+        
+        // Add labels if enabled for this session - positioned at center of session
+        if showFirstLabels
+            // High label
+            highLabel = label.new(centerBar, currentFirstHigh, str.tostring(currentFirstHigh), style = label.style_label_down, color = firstLineColor, textcolor = firstTextColor, size = getLabelSize(firstLabelSize))
+            array.push(allHighLabels, highLabel)
+            
+            // Low label
+            lowLabel = label.new(centerBar, currentFirstLow, str.tostring(currentFirstLow), style = label.style_label_up, color = firstLineColor, textcolor = firstTextColor, size = getLabelSize(firstLabelSize))
+            array.push(allLowLabels, lowLabel)
+        
+        sessionsDrawn += 1
+
+// Check and draw current Second session
+if showSecondLines and secondSessionActive and not na(currentSecondHigh) and not na(currentSecondLow) and not na(currentSecondStart) and sessionsDrawn < effectiveSessionsToShow
+    // Only draw if it's today (or if onlyCurrentDay is disabled)
+    if not onlyCurrentDay or isToday(time)
+        endBar = extendToCurrentBar ? bar_index : bar_index
+        centerBar = getCenterBar(currentSecondStart, bar_index)
+        
+        // High line - use the exact color chosen by user
+        highLine = line.new(currentSecondStart, currentSecondHigh, endBar, currentSecondHigh, color = secondLineColor, width = secondLineWidth, style = getLineStyle(secondLineStyle), extend = extend.none)
+        array.push(allHighLines, highLine)
+        
+        // Low line - use the exact color chosen by user
+        lowLine = line.new(currentSecondStart, currentSecondLow, endBar, currentSecondLow, color = secondLineColor, width = secondLineWidth, style = getLineStyle(secondLineStyle), extend = extend.none)
+        array.push(allLowLines, lowLine)
+        
+        // Add labels if enabled for this session - positioned at center of session
+        if showSecondLabels
+            // High label
+            highLabel = label.new(centerBar, currentSecondHigh, str.tostring(currentSecondHigh), style = label.style_label_down, color = secondLineColor, textcolor = secondTextColor, size = getLabelSize(secondLabelSize))
+            array.push(allHighLabels, highLabel)
+            
+            // Low label
+            lowLabel = label.new(centerBar, currentSecondLow, str.tostring(currentSecondLow), style = label.style_label_up, color = secondLineColor, textcolor = secondTextColor, size = getLabelSize(secondLabelSize))
+            array.push(allLowLabels, lowLabel)
+        
+        sessionsDrawn += 1
+
+// Check and draw current Third session
+if showThirdLines and thirdSessionActive and not na(currentThirdHigh) and not na(currentThirdLow) and not na(currentThirdStart) and sessionsDrawn < effectiveSessionsToShow
+    // Only draw if it's today (or if onlyCurrentDay is disabled)
+    if not onlyCurrentDay or isToday(time)
+        endBar = extendToCurrentBar ? bar_index : bar_index
+        centerBar = getCenterBar(currentThirdStart, bar_index)
+        
+        // High line - use the exact color chosen by user
+        highLine = line.new(currentThirdStart, currentThirdHigh, endBar, currentThirdHigh, color = thirdLineColor, width = thirdLineWidth, style = getLineStyle(thirdLineStyle), extend = extend.none)
+        array.push(allHighLines, highLine)
+        
+        // Low line - use the exact color chosen by user
+        lowLine = line.new(currentThirdStart, currentThirdLow, endBar, currentThirdLow, color = thirdLineColor, width = thirdLineWidth, style = getLineStyle(thirdLineStyle), extend = extend.none)
+        array.push(allLowLines, lowLine)
+        
+        // Add labels if enabled for this session - positioned at center of session
+        if showThirdLabels
+            // High label
+            highLabel = label.new(centerBar, currentThirdHigh, str.tostring(currentThirdHigh), style = label.style_label_down, color = thirdLineColor, textcolor = thirdTextColor, size = getLabelSize(thirdLabelSize))
+            array.push(allHighLabels, highLabel)
+            
+            // Low label
+            lowLabel = label.new(centerBar, currentThirdLow, str.tostring(currentThirdLow), style = label.style_label_up, color = thirdLineColor, textcolor = thirdTextColor, size = getLabelSize(thirdLabelSize))
+            array.push(allLowLabels, lowLabel)
+        
+        sessionsDrawn += 1
+
+// PRIORITY 2: Draw historical sessions only if we still need more sessions to reach effectiveSessionsToShow
+historySize = array.size(allSessions)
+
+if historySize > 0 and sessionsDrawn < effectiveSessionsToShow
+    for i = 0 to historySize - 1
+        if sessionsDrawn >= effectiveSessionsToShow
+            break
+        
+        sessionData = array.get(allSessions, i)
+        if not na(sessionData)
+            // Only draw if it's from today (or if onlyCurrentDay is disabled)
+            if not onlyCurrentDay or isToday(sessionData.timestamp)
+                endBar = extendToCurrentBar ? bar_index : sessionData.end
+                centerBar = getCenterBar(sessionData.start, sessionData.end)
+                
+                // High line - use the exact color stored in sessionData (which respects user's choice)
+                highLine = line.new(sessionData.start, sessionData.high, endBar, sessionData.high, color = sessionData.lineColor, width = sessionData.lineWidth, style = getLineStyle(sessionData.lineStyle), extend = extend.none)
+                array.push(allHighLines, highLine)
+                
+                // Low line - use the exact color stored in sessionData (which respects user's choice)
+                lowLine = line.new(sessionData.start, sessionData.low, endBar, sessionData.low, color = sessionData.lineColor, width = sessionData.lineWidth, style = getLineStyle(sessionData.lineStyle), extend = extend.none)
+                array.push(allLowLines, lowLine)
+                
+                // Add labels if enabled for this session - positioned at center of session
+                if sessionData.showLabels
+                    // High label
+                    highLabel = label.new(centerBar, sessionData.high, str.tostring(sessionData.high), style = label.style_label_down, color = sessionData.lineColor, textcolor = sessionData.textColor, size = getLabelSize(sessionData.labelSize))
+                    array.push(allHighLabels, highLabel)
+                    
+                    // Low label
+                    lowLabel = label.new(centerBar, sessionData.low, str.tostring(sessionData.low), style = label.style_label_up, color = sessionData.lineColor, textcolor = sessionData.textColor, size = getLabelSize(sessionData.labelSize))
+                    array.push(allLowLabels, lowLabel)
+                
+                sessionsDrawn += 1
+
+if timeframe.isdwm
+    runtime.error("This indicator can only be used on intraday timeframes.")
