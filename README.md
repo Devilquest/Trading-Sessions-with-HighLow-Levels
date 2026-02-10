@@ -4,7 +4,7 @@
 
 A comprehensive Pine Script indicator for TradingView that provides visual background coloring for major trading sessions along with dynamic high/low level tracking and labeling.
 
-Access the indicator directly on TradingView: [Trading Sessions with High/Low Levels](https://es.tradingview.com/script/NaTeSqvh/)
+Access the indicator directly on TradingView: [Trading Sessions with High/Low Levels](https://www.tradingview.com/script/igvcri4n-Trading-Sessions-with-High-Low-Levels)
 
 ![Trading Sessions with HighLow Levels Preview](https://i.imgur.com/UEYCk4Y.png)
 
